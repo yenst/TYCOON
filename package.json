@@ -1,0 +1,19 @@
+{
+  "name": "mijniebellen",
+  "module": "src/main.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "bun --hot index.html",
+    "build": "bun build index.html --outdir=dist"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "phaser": "^4.1.0"
+  }
+}
