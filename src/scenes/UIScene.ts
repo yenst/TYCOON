@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import type { GameScene, BuildMode } from "./GameScene";
-import { RIDES, PATH_COST, DAY_DURATION_MS } from "../config";
+import { RIDES, RIDE_TYPES, PATH_COST, DAY_DURATION_MS, type RideType } from "../config";
 import { crispText } from "../util/crispText";
 
 type ButtonAction = BuildMode | "pause" | "restart" | "menu";
@@ -17,7 +17,20 @@ export class UIScene extends Phaser.Scene {
   dayText!: Phaser.GameObjects.Text;
   dayProgressBg!: Phaser.GameObjects.Rectangle;
   dayProgressFill!: Phaser.GameObjects.Rectangle;
+  statBg!: Phaser.GameObjects.Rectangle;
+  statTitle!: Phaser.GameObjects.Text;
+  statScoreLabel!: Phaser.GameObjects.Text;
+  statScoreValue!: Phaser.GameObjects.Text;
+  statRows!: Phaser.GameObjects.Text[];
   buttons: ButtonRefs[] = [];
+  ridePanelObjects: Phaser.GameObjects.GameObject[] = [];
+  rideCardRefs: Array<{
+    bg: Phaser.GameObjects.Rectangle;
+    nameText: Phaser.GameObjects.Text;
+    subText: Phaser.GameObjects.Text;
+    priceText: Phaser.GameObjects.Text;
+    type: RideType;
+  }> = [];
   game_!: GameScene;
 
   constructor() {
@@ -39,7 +52,7 @@ export class UIScene extends Phaser.Scene {
     const buttons: Array<{ label: string; mode: ButtonAction; cost?: number }> = [
       { label: "Select", mode: "select" },
       { label: `Path  $${PATH_COST}`, mode: "path", cost: PATH_COST },
-      { label: `Carousel  $${RIDES.carousel.cost}`, mode: "carousel", cost: RIDES.carousel.cost },
+      { label: "Rides", mode: "ride" },
       { label: "Demolish", mode: "demolish" },
       { label: "Pause", mode: "pause" },
       { label: "Restart", mode: "restart" },
@@ -104,6 +117,9 @@ export class UIScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(1002);
 
+    this.buildStatCard();
+    this.buildRidePanel();
+
     // Spacebar = pause
     this.input.keyboard!.on("keydown-SPACE", () => this.togglePause());
 
@@ -115,6 +131,7 @@ export class UIScene extends Phaser.Scene {
       this.dayText.x = dayBlockX;
       this.dayProgressBg.x = dayBlockX;
       this.dayProgressFill.x = dayBlockX;
+      this.positionStatCard();
     };
     this.scale.on("resize", onResize);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
@@ -122,6 +139,190 @@ export class UIScene extends Phaser.Scene {
     });
 
     this.refresh();
+  }
+
+  private buildStatCard() {
+    const w = 220;
+    const h = 152;
+    this.statBg = this.add
+      .rectangle(0, 0, w, h, 0xffffff, 1)
+      .setOrigin(1, 1)
+      .setStrokeStyle(1, 0xe5e7eb)
+      .setScrollFactor(0)
+      .setDepth(1000);
+
+    this.statTitle = crispText(
+      this.add.text(0, 0, "Park", {
+        color: "#6b7280",
+        fontFamily: "system-ui, sans-serif",
+        fontSize: "11px",
+        fontStyle: "600",
+      }),
+    )
+      .setOrigin(0, 0)
+      .setScrollFactor(0)
+      .setDepth(1002);
+
+    this.statScoreLabel = crispText(
+      this.add.text(0, 0, "Score", {
+        color: "#6b7280",
+        fontFamily: "system-ui, sans-serif",
+        fontSize: "11px",
+        fontStyle: "500",
+      }),
+    )
+      .setOrigin(0, 0)
+      .setScrollFactor(0)
+      .setDepth(1002);
+
+    this.statScoreValue = crispText(
+      this.add.text(0, 0, "0", {
+        color: "#111827",
+        fontFamily: "system-ui, sans-serif",
+        fontSize: "26px",
+        fontStyle: "600",
+      }),
+    )
+      .setOrigin(0, 0)
+      .setScrollFactor(0)
+      .setDepth(1002);
+
+    this.statRows = [];
+    for (let i = 0; i < 4; i++) {
+      const t = crispText(
+        this.add.text(0, 0, "", {
+          color: "#111827",
+          fontFamily: "system-ui, sans-serif",
+          fontSize: "12px",
+        }),
+      )
+        .setOrigin(0, 0)
+        .setScrollFactor(0)
+        .setDepth(1002);
+      this.statRows.push(t);
+    }
+
+    this.positionStatCard();
+  }
+
+  private buildRidePanel() {
+    const panelW = 240;
+    const cardH = 64;
+    const pad = 12;
+    const headerH = 32;
+    const startY = 56 + 12; // below toolbar
+    const startX = 12;
+    const panelH = headerH + RIDE_TYPES.length * (cardH + 8) + pad;
+
+    const bg = this.add
+      .rectangle(startX, startY, panelW, panelH, 0xffffff, 1)
+      .setOrigin(0, 0)
+      .setStrokeStyle(1, 0xe5e7eb)
+      .setScrollFactor(0)
+      .setDepth(1000);
+    this.ridePanelObjects.push(bg);
+
+    const title = crispText(
+      this.add.text(startX + pad, startY + 10, "Build a ride", {
+        color: "#111827",
+        fontFamily: "system-ui, sans-serif",
+        fontSize: "14px",
+        fontStyle: "600",
+      }),
+    )
+      .setOrigin(0, 0)
+      .setScrollFactor(0)
+      .setDepth(1002);
+    this.ridePanelObjects.push(title);
+
+    let y = startY + headerH + 4;
+    for (const type of RIDE_TYPES) {
+      const def = RIDES[type];
+      const cardX = startX + pad;
+      const cardW = panelW - pad * 2;
+      const card = this.add
+        .rectangle(cardX, y, cardW, cardH, 0xf9fafb, 1)
+        .setOrigin(0, 0)
+        .setStrokeStyle(1, 0xe5e7eb)
+        .setInteractive({ useHandCursor: true })
+        .setScrollFactor(0)
+        .setDepth(1001);
+      card.on("pointerdown", () => this.selectRide(type));
+      this.ridePanelObjects.push(card);
+
+      const name = crispText(
+        this.add.text(cardX + 12, y + 10, def.name, {
+          color: "#111827",
+          fontFamily: "system-ui, sans-serif",
+          fontSize: "14px",
+          fontStyle: "600",
+        }),
+      )
+        .setOrigin(0, 0)
+        .setScrollFactor(0)
+        .setDepth(1003);
+      this.ridePanelObjects.push(name);
+
+      const meta = `$${def.cost.toLocaleString()}  ·  ${def.width}×${def.height}  ·  ${def.maxRiders} riders`;
+      const sub = crispText(
+        this.add.text(cardX + 12, y + 32, meta, {
+          color: "#6b7280",
+          fontFamily: "system-ui, sans-serif",
+          fontSize: "11px",
+        }),
+      )
+        .setOrigin(0, 0)
+        .setScrollFactor(0)
+        .setDepth(1003);
+      this.ridePanelObjects.push(sub);
+
+      const price = crispText(
+        this.add.text(cardX + cardW - 12, y + 32, `$${def.pricePerRide}/visit`, {
+          color: "#6b7280",
+          fontFamily: "system-ui, sans-serif",
+          fontSize: "11px",
+        }),
+      )
+        .setOrigin(1, 0)
+        .setScrollFactor(0)
+        .setDepth(1003);
+      this.ridePanelObjects.push(price);
+
+      this.rideCardRefs.push({ bg: card, nameText: name, subText: sub, priceText: price, type });
+      y += cardH + 8;
+    }
+
+    this.setRidePanelVisible(false);
+  }
+
+  private setRidePanelVisible(v: boolean) {
+    for (const o of this.ridePanelObjects) {
+      (o as Phaser.GameObjects.GameObject & { setVisible: (b: boolean) => unknown }).setVisible(v);
+    }
+  }
+
+  private selectRide(type: RideType) {
+    this.game_.selectedRideType = type;
+    this.game_.mode = "ride";
+    this.refresh();
+  }
+
+  private positionStatCard() {
+    if (!this.statBg) return;
+    const margin = 16;
+    const right = this.scale.width - margin;
+    const bottom = this.scale.height - margin;
+    this.statBg.setPosition(right, bottom);
+    const left = right - this.statBg.width + 16;
+    const top = bottom - this.statBg.height + 14;
+    this.statTitle.setPosition(left, top);
+    this.statScoreLabel.setPosition(left, top + 18);
+    this.statScoreValue.setPosition(left, top + 30);
+    let y = top + 70;
+    for (const t of this.statRows) {
+      t.setPosition(left, y);
+      y += 18;
+    }
   }
 
   private handleButton(mode: ButtonAction) {
@@ -167,6 +368,48 @@ export class UIScene extends Phaser.Scene {
     const progress = (this.game_.park?.dayProgressMs ?? 0) / DAY_DURATION_MS;
     this.dayText.setText(`Day ${day}`);
     this.dayProgressFill.width = 64 * Math.min(1, Math.max(0, progress));
+
+    // Stat card
+    const park = this.game_.park;
+    if (park && this.statScoreValue) {
+      const score = park.parkScore();
+      const ridesN = park.rides.length;
+      const pathN = park.pathTileCount();
+      const visiting = this.game_.guests?.length ?? 0;
+      const served = park.totalServed;
+      this.statScoreValue.setText(score.toLocaleString());
+      this.statRows[0]?.setText(`Rides   ${ridesN}`);
+      this.statRows[1]?.setText(`Paths   ${pathN}`);
+      this.statRows[2]?.setText(`Visiting   ${visiting}`);
+      this.statRows[3]?.setText(`Served   ${served.toLocaleString()}`);
+    }
+
+    // Toggle ride-panel visibility whenever ride mode is active.
+    this.setRidePanelVisible(this.game_.mode === "ride");
+    for (const card of this.rideCardRefs) {
+      const isSelected = this.game_.mode === "ride" && this.game_.selectedRideType === card.type;
+      const def = RIDES[card.type];
+      const canAfford = (this.game_.park?.cash ?? 0) >= def.cost;
+      let fill = 0xf9fafb;
+      let stroke = 0xe5e7eb;
+      let nameColor = "#111827";
+      let subColor = "#6b7280";
+      if (isSelected) {
+        fill = 0x111827;
+        stroke = 0x111827;
+        nameColor = "#ffffff";
+        subColor = "#cbd5e1";
+      } else if (!canAfford) {
+        fill = 0xf3f4f6;
+        nameColor = "#9ca3af";
+        subColor = "#9ca3af";
+      }
+      card.bg.setFillStyle(fill, 1);
+      card.bg.setStrokeStyle(1, stroke);
+      card.nameText.setColor(nameColor);
+      card.subText.setColor(subColor);
+      card.priceText.setColor(subColor);
+    }
 
     for (const b of this.buttons) {
       const isActive =

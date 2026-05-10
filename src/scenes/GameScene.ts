@@ -11,8 +11,6 @@ import {
   TILE_H,
   ENTRANCE_GX,
   ENTRANCE_GY,
-  GUEST_SPAWN_INTERVAL_MS,
-  GUEST_MAX,
   PATH_COST,
   RIDES,
   AUTOSAVE_INTERVAL_MS,
@@ -24,7 +22,7 @@ import {
   type RideType,
 } from "../config";
 
-export type BuildMode = "select" | "path" | "carousel" | "demolish";
+export type BuildMode = "select" | "path" | "ride" | "demolish";
 
 export class GameScene extends Phaser.Scene {
   park!: Park;
@@ -34,6 +32,7 @@ export class GameScene extends Phaser.Scene {
   spawnTimer = 0;
   paused = false;
   mode: BuildMode = "select";
+  selectedRideType: RideType = "carousel";
   entranceSprite!: Phaser.GameObjects.Image;
   cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   isPainting = false;
@@ -262,9 +261,10 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    if (this.mode === "carousel") {
-      const def = RIDES.carousel;
-      const ok = this.park.canPlaceRide("carousel", gx, gy);
+    if (this.mode === "ride") {
+      const type = this.selectedRideType;
+      const def = RIDES[type];
+      const ok = this.park.canPlaceRide(type, gx, gy);
       this.ensureFootprintCount(def.width * def.height);
       let i = 0;
       for (let dy = 0; dy < def.height; dy++) {
@@ -280,14 +280,13 @@ export class GameScene extends Phaser.Scene {
           f.setVisible(true);
         }
       }
-      // Hide any extra footprint tiles from previous larger preview
       for (let j = i; j < this.previewFootprint.length; j++) {
         this.previewFootprint[j]!.setVisible(false);
       }
       const cx = gx + (def.width - 1) / 2;
       const cy = gy + (def.height - 1) / 2;
       const s = gridToScreen(cx, cy);
-      this.previewMain.setTexture("ride_carousel");
+      this.previewMain.setTexture(def.textureKey);
       this.previewMain.setOrigin(0.5, 0.85);
       this.previewMain.setPosition(s.x, s.y);
       this.previewMain.setDepth(depth(gx + def.width - 1, gy + def.height - 1) + 0.6);
@@ -345,8 +344,8 @@ export class GameScene extends Phaser.Scene {
       if (this.park.paintPath(gx, gy, PATH_COST)) {
         this.refreshTile(gx, gy);
       }
-    } else if (this.mode === "carousel") {
-      this.tryPlaceRide("carousel", gx, gy);
+    } else if (this.mode === "ride") {
+      this.tryPlaceRide(this.selectedRideType, gx, gy);
     } else if (this.mode === "demolish") {
       const result = this.park.demolish(gx, gy);
       if (result === "path") {
@@ -407,9 +406,11 @@ export class GameScene extends Phaser.Scene {
       this.park.currentDay += 1;
     }
 
-    // Spawn guests.
+    // Spawn guests — interval and cap derived from the park's score.
     this.spawnTimer += delta;
-    if (this.spawnTimer >= GUEST_SPAWN_INTERVAL_MS && this.guests.length < GUEST_MAX) {
+    const spawnInterval = this.park.recommendedSpawnIntervalMs();
+    const cap = this.park.recommendedMaxGuests();
+    if (this.spawnTimer >= spawnInterval && this.guests.length < cap) {
       this.spawnTimer = 0;
       const g = new Guest(this, this.park, ENTRANCE_GX, ENTRANCE_GY);
       this.guests.push(g);

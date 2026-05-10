@@ -4,6 +4,7 @@ import { RIDES } from "../config";
 import { gridToScreen, depth } from "../iso";
 import { GUEST_STEP_MS, ENTRANCE_GX, ENTRANCE_GY, GUEST_VARIANT_COUNT } from "../config";
 import { bfs, adjacentPathTiles } from "../pathfind";
+import { GUEST_WALK_ANIMS, guestStaticKey, type GuestDir } from "./GuestAssets";
 
 type State = "spawned" | "walking_to_ride" | "riding" | "leaving";
 
@@ -22,8 +23,10 @@ export class Guest {
   rideTimer = 0;
   idleTimer = 0;
   targetRide: RideInstance | null = null;
-  facing: "se" | "sw" | "ne" | "nw" = "se";
+  facing: GuestDir = "se";
   variant: number;
+  /** Last direction the walk anim was playing for, to avoid restarting every frame. */
+  private playingWalkDir: GuestDir | null = null;
 
   scene: Phaser.Scene;
   sprite: Phaser.GameObjects.Sprite;
@@ -37,13 +40,34 @@ export class Guest {
     this.gy = gy;
     this.variant = 1 + Math.floor(Math.random() * GUEST_VARIANT_COUNT);
     const s = gridToScreen(gx, gy);
-    this.sprite = scene.add.sprite(s.x, s.y, this.textureKey());
+    this.sprite = scene.add.sprite(s.x, s.y, guestStaticKey(this.variant, this.facing));
     this.sprite.setOrigin(0.5, 0.9);
     this.sprite.setDepth(depth(gx, gy) + 0.6);
   }
 
-  private textureKey(): string {
-    return `guest_v${this.variant}_${this.facing}`;
+  private walkAnimKey(): string | null {
+    return GUEST_WALK_ANIMS[this.variant]?.[this.facing] ?? null;
+  }
+
+  private playWalk() {
+    const animKey = this.walkAnimKey();
+    if (!animKey) {
+      this.stopWalk();
+      this.sprite.setTexture(guestStaticKey(this.variant, this.facing));
+      return;
+    }
+    if (this.playingWalkDir !== this.facing) {
+      this.sprite.play(animKey);
+      this.playingWalkDir = this.facing;
+    }
+  }
+
+  private stopWalk() {
+    if (this.playingWalkDir !== null) {
+      this.sprite.stop();
+      this.playingWalkDir = null;
+    }
+    this.sprite.setTexture(guestStaticKey(this.variant, this.facing));
   }
 
   private updateSprite() {
@@ -51,7 +75,8 @@ export class Guest {
     this.sprite.x = s.x;
     this.sprite.y = s.y;
     this.sprite.setDepth(depth(this.gx, this.gy) + 0.6);
-    this.sprite.setTexture(this.textureKey());
+    if (this.state === "walking_to_ride" || this.state === "leaving") this.playWalk();
+    else this.stopWalk();
   }
 
   /** Picks the closest reachable ride with capacity and computes a path to a path-tile adjacent to it. */
@@ -105,6 +130,7 @@ export class Guest {
       if (this.planToRide()) {
         this.state = "walking_to_ride";
         this.idleTimer = 0;
+        this.playWalk();
         return false;
       }
       // No reachable ride yet — wait visibly at entrance, retry next tick.
@@ -113,6 +139,7 @@ export class Guest {
       // Gave up waiting — leave (or despawn instantly if at exit).
       if (!this.planToExit()) return true;
       this.state = "leaving";
+      this.playWalk();
       return false;
     }
 
@@ -124,10 +151,12 @@ export class Guest {
           const def = RIDES[this.targetRide.type];
           this.park.cash += def.pricePerRide;
           this.park.exitRide(this.targetRide);
+          this.park.totalServed += 1;
         }
         this.sprite.setVisible(true);
         if (this.planToExit()) {
           this.state = "leaving";
+          this.playWalk();
         } else {
           return true;
         }
@@ -155,6 +184,7 @@ export class Guest {
           return true;
         }
         this.sprite.setVisible(false);
+        this.stopWalk();
         const def = RIDES[this.targetRide.type];
         this.rideTimer = def.rideDurationMs;
         this.state = "riding";

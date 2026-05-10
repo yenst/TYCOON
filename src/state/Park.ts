@@ -5,6 +5,11 @@ import {
   ENTRANCE_GX,
   ENTRANCE_GY,
   RIDES,
+  SCORE_PER_RIDE,
+  SCORE_PER_PATH,
+  SCORE_PER_VISITOR_SERVED,
+  GUEST_SPAWN_INTERVAL_MS,
+  GUEST_MAX,
   type RideType,
 } from "../config";
 
@@ -24,6 +29,7 @@ export interface ParkSnapshot {
   cash: number;
   currentDay?: number;
   dayProgressMs?: number;
+  totalServed?: number;
 }
 
 let _nextRideId = 1;
@@ -37,6 +43,7 @@ export class Park {
   cash: number = STARTING_CASH;
   currentDay: number = 1;
   dayProgressMs: number = 0;
+  totalServed: number = 0;
   /** Transient — current riders per ride id; not serialized. */
   ridersPerRide: Map<string, number> = new Map();
 
@@ -137,6 +144,34 @@ export class Park {
     return this.ridersPerRide.get(rideId) ?? 0;
   }
 
+  pathTileCount(): number {
+    let n = 0;
+    for (const row of this.tiles) for (const t of row) if (t === "path") n++;
+    return n;
+  }
+
+  parkScore(): number {
+    return (
+      this.rides.length * SCORE_PER_RIDE +
+      this.pathTileCount() * SCORE_PER_PATH +
+      this.totalServed * SCORE_PER_VISITOR_SERVED
+    );
+  }
+
+  /**
+   * Spawn interval shrinks as the park's score grows: at score 0 we use the
+   * configured base, by score 500 we're roughly twice as fast, capped at 400ms.
+   */
+  recommendedSpawnIntervalMs(): number {
+    const score = this.parkScore();
+    return Math.max(400, Math.round(GUEST_SPAWN_INTERVAL_MS / (1 + score / 400)));
+  }
+
+  recommendedMaxGuests(): number {
+    const score = this.parkScore();
+    return Math.min(GUEST_MAX, 8 + Math.floor(score / 12));
+  }
+
   canEnterRide(ride: RideInstance): boolean {
     if (!this.rides.some((r) => r.id === ride.id)) return false;
     const def = RIDES[ride.type];
@@ -162,6 +197,7 @@ export class Park {
       cash: this.cash,
       currentDay: this.currentDay,
       dayProgressMs: this.dayProgressMs,
+      totalServed: this.totalServed,
     };
   }
 
@@ -175,6 +211,7 @@ export class Park {
     p.cash = typeof snap.cash === "number" ? snap.cash : STARTING_CASH;
     p.currentDay = typeof snap.currentDay === "number" ? snap.currentDay : 1;
     p.dayProgressMs = typeof snap.dayProgressMs === "number" ? snap.dayProgressMs : 0;
+    p.totalServed = typeof snap.totalServed === "number" ? snap.totalServed : 0;
     // Make sure ride id counter doesn't collide with loaded ones
     for (const r of p.rides) {
       const n = parseInt(r.id.slice(1), 10);
