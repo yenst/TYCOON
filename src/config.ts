@@ -24,7 +24,8 @@ export type RideType =
   | "bench"
   | "lamp"
   | "fountain"
-  | "planter";
+  | "planter"
+  | "lolly_arch";
 
 export type AttractionCategory = "ride" | "stand" | "decoration";
 
@@ -194,6 +195,18 @@ export const RIDES: Record<RideType, RideDef> = {
     rideDurationMs: 0,
     maxRiders: 0,
     textureKey: "decor_planter",
+  },
+  lolly_arch: {
+    name: "Lollipop Arch",
+    category: "decoration",
+    cost: 250,
+    width: 1,
+    height: 1,
+    pricePerRide: 0,
+    rideDurationMs: 0,
+    maxRiders: 0,
+    textureKey: "decor_lolly_arch",
+    scale: 0.7,
   },
 };
 

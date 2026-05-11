@@ -181,11 +181,24 @@ export class Park {
   refreshStandSlots(ride: RideInstance) {
     const def = RIDES[ride.type];
     if (def.category !== "stand") return;
-    const adj = adjacentPathTiles(this, ride.gx, ride.gy, def.width, def.height);
     const existing = this.standSlots.get(ride.id) ?? [];
+    const candidates: Array<[number, number]> = [];
+    if (def.slotPattern === "sw_line") {
+      // "Front pair" — two slots side by side along screen-x in front of the
+      // stand: the SW-adjacent tile and the SE-adjacent tile. Both project at
+      // the same screen-y so they read as a horizontal queue.
+      const sw: [number, number] = [ride.gx, ride.gy + def.height];
+      const se: [number, number] = [ride.gx + def.width, ride.gy + def.height - 1];
+      for (const [sx, sy] of [sw, se]) {
+        if (this.isPath(sx, sy)) candidates.push([sx, sy]);
+      }
+    } else {
+      // Default: any orthogonally-adjacent path tile.
+      candidates.push(...adjacentPathTiles(this, ride.gx, ride.gy, def.width, def.height));
+    }
     const next: { gx: number; gy: number; occupant: string | null }[] = [];
-    for (let i = 0; i < def.maxRiders && i < adj.length; i++) {
-      const [gx, gy] = adj[i]!;
+    for (let i = 0; i < def.maxRiders && i < candidates.length; i++) {
+      const [gx, gy] = candidates[i]!;
       const prior = existing.find((s) => s.gx === gx && s.gy === gy);
       next.push({ gx, gy, occupant: prior?.occupant ?? null });
     }
@@ -304,16 +317,25 @@ export class Park {
    * For stands: claims the first free slot and returns its grid position; the
    * guest should walk to that exact tile and stay there until exitRide.
    */
-  enterRide(ride: RideInstance, guestId: string): { gx: number; gy: number } | true | false {
+  enterRide(
+    ride: RideInstance,
+    guestId: string,
+    atGx?: number,
+    atGy?: number,
+  ): { gx: number; gy: number } | true | false {
     const def = RIDES[ride.type];
     if (def.category === "stand") {
       this.refreshStandSlots(ride);
       const slots = this.standSlots.get(ride.id);
       if (!slots) return false;
-      const free = slots.find((s) => s.occupant === null);
-      if (!free) return false;
-      free.occupant = guestId;
-      return { gx: free.gx, gy: free.gy };
+      // Prefer the slot the guest is already standing on, if it's free.
+      let pick = slots.find(
+        (s) => s.occupant === null && atGx !== undefined && s.gx === atGx && s.gy === atGy,
+      );
+      if (!pick) pick = slots.find((s) => s.occupant === null);
+      if (!pick) return false;
+      pick.occupant = guestId;
+      return { gx: pick.gx, gy: pick.gy };
     }
     if (!this.canEnterRide(ride)) return false;
     this.ridersPerRide.set(ride.id, this.ridersOn(ride.id) + 1);
@@ -353,7 +375,10 @@ export class Park {
     if (Array.isArray(snap.tiles) && snap.tiles.length === MAP_H) {
       p.tiles = snap.tiles;
     }
-    p.rides = Array.isArray(snap.rides) ? snap.rides : [];
+    // Drop any rides whose type isn't in RIDES anymore (e.g., removed in a code update).
+    p.rides = (Array.isArray(snap.rides) ? snap.rides : []).filter(
+      (r) => RIDES[r.type] !== undefined,
+    );
     p.cash = typeof snap.cash === "number" ? snap.cash : STARTING_CASH;
     p.currentDay = typeof snap.currentDay === "number" ? snap.currentDay : 1;
     p.dayProgressMs = typeof snap.dayProgressMs === "number" ? snap.dayProgressMs : 0;

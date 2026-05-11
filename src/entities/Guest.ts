@@ -164,7 +164,15 @@ export class Guest {
       // Use forecast-aware capacity so we don't pile onto a ride that's
       // effectively already full counting incoming guests.
       if (!this.park.canTargetRide(ride)) continue;
-      const tiles = adjacentPathTiles(this.park, ride.gx, ride.gy, def.width, def.height);
+      // Stands have explicit slot positions — target those directly so the
+      // guest walks to where they'll actually stand, instead of any adjacent
+      // path. Rides still use the "any adjacent" rule.
+      let tiles: Array<[number, number]>;
+      if (def.category === "stand") {
+        tiles = this.park.standSlotsFor(ride.id).map((s) => [s.gx, s.gy]);
+      } else {
+        tiles = adjacentPathTiles(this.park, ride.gx, ride.gy, def.width, def.height);
+      }
       for (const [x, y] of tiles) {
         const key = y * 10000 + x;
         adjSet.add(key);
@@ -297,7 +305,7 @@ export class Guest {
         // Reservation has served its purpose — release it before attempting entry.
         this.releaseCommitOnly();
         // Try to enter — could be full now since we planned a while ago.
-        const result = this.park.enterRide(this.targetRide, this.id);
+        const result = this.park.enterRide(this.targetRide, this.id, this.gx, this.gy);
         if (result === false) {
           // Full → try to find another ride; if none, give up and leave.
           this.setTargetRide(null);

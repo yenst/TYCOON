@@ -16,6 +16,7 @@ import decorBenchUrl from "../../public/assets/decorations/bench.png" with { typ
 import decorLampUrl from "../../public/assets/decorations/lamp.png" with { type: "file" };
 import decorFountainUrl from "../../public/assets/decorations/fountain.png" with { type: "file" };
 import decorPlanterUrl from "../../public/assets/decorations/planter.png" with { type: "file" };
+import decorLollyArchUrl from "../../public/assets/decorations/lolly_arch.png" with { type: "file" };
 // Carousel anim frames
 import carouselAnim00 from "../../public/assets/rides/carousel_anim/00.png" with { type: "file" };
 import carouselAnim01 from "../../public/assets/rides/carousel_anim/01.png" with { type: "file" };
@@ -118,6 +119,7 @@ export const RideAssets = {
     scene.load.image("decor_lamp", decorLampUrl);
     scene.load.image("decor_fountain", decorFountainUrl);
     scene.load.image("decor_planter", decorPlanterUrl);
+    scene.load.image("decor_lolly_arch", decorLollyArchUrl);
     for (const [type, frames] of Object.entries(RIDE_ANIM_FRAMES)) {
       for (let i = 0; i < frames.length; i++) {
         scene.load.image(animFrameKey(type, i), frames[i]!);
@@ -143,6 +145,8 @@ export class RideSprite {
   data: RideInstance;
   sprite: Phaser.GameObjects.Sprite;
   spinning = false;
+  /** True for decorations whose animation should never be stopped by rider count. */
+  alwaysSpinning = false;
   capacityBg: Phaser.GameObjects.Rectangle;
   capacityText: Phaser.GameObjects.Text;
   lastRiders = -1;
@@ -192,6 +196,13 @@ export class RideSprite {
       this.capacityBg.setVisible(false);
       this.capacityText.setVisible(false);
     }
+    // Decorations that have an animation loop play it continuously.
+    const animKeyAlways = RIDE_ANIM_KEYS[data.type];
+    if (def.category === "decoration" && animKeyAlways && scene.anims.exists(animKeyAlways)) {
+      this.sprite.play(animKeyAlways);
+      this.spinning = true;
+      this.alwaysSpinning = true;
+    }
   }
 
   setCapacity(current: number) {
@@ -231,6 +242,7 @@ export class RideSprite {
 
   stopSpin() {
     if (!this.spinning) return;
+    if (this.alwaysSpinning) return; // fountain etc. keep flowing forever
     this.sprite.stop();
     this.sprite.setTexture(RIDES[this.data.type].textureKey);
     this.spinning = false;
@@ -252,5 +264,6 @@ export class RideSprite {
     this.slotMarkers = [];
   }
 }
+
 
 
