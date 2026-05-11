@@ -12,10 +12,28 @@ export const PATH_COST = 10;
 export const ENTRANCE_GX = 0;
 export const ENTRANCE_GY = Math.floor(MAP_H / 2);
 
-export type RideType = "carousel" | "swings" | "bumper_cars" | "ferris_wheel";
+export type RideType =
+  | "carousel"
+  | "swings"
+  | "bumper_cars"
+  | "ferris_wheel"
+  | "food_stand"
+  | "cotton_candy"
+  | "hot_dog"
+  | "drinks"
+  | "bench"
+  | "lamp"
+  | "fountain"
+  | "planter";
+
+export type AttractionCategory = "ride" | "stand" | "decoration";
+
+export const WATER_COST = 5;
+export const BRIDGE_COST = 20;
 
 export interface RideDef {
   name: string;
+  category: AttractionCategory;
   cost: number;
   width: number;
   height: number;
@@ -23,13 +41,28 @@ export interface RideDef {
   rideDurationMs: number;
   maxRiders: number;
   textureKey: string;
+  /** Override the category's default sprite scale. */
+  scale?: number;
+  /**
+   * Where customer slots are derived (stands only).
+   *  - "any" (default): any orthogonally-adjacent path tile.
+   *  - "sw_line": a queue extending SW from the stand: (gx, gy+1), (gx, gy+2), ...
+   */
+  slotPattern?: "any" | "sw_line";
 }
+
+// Hunger ramps up while the guest is in the park. Once >= EAT_THRESHOLD they
+// look for a stand instead of a ride; eating resets it to 0.
+export const HUNGER_PER_SECOND = 22;
+export const HUNGER_EAT_THRESHOLD = 60;
+export const HUNGER_MAX = 100;
 
 // NB: new rides reuse the carousel texture as a placeholder until per-ride art
 // is generated (PixelLab create_object).
 export const RIDES: Record<RideType, RideDef> = {
   carousel: {
     name: "Carousel",
+    category: "ride",
     cost: 1500,
     width: 2,
     height: 2,
@@ -40,6 +73,7 @@ export const RIDES: Record<RideType, RideDef> = {
   },
   swings: {
     name: "Swings",
+    category: "ride",
     cost: 1200,
     width: 2,
     height: 2,
@@ -50,6 +84,7 @@ export const RIDES: Record<RideType, RideDef> = {
   },
   bumper_cars: {
     name: "Bumper Cars",
+    category: "ride",
     cost: 3500,
     width: 3,
     height: 3,
@@ -60,6 +95,7 @@ export const RIDES: Record<RideType, RideDef> = {
   },
   ferris_wheel: {
     name: "Ferris Wheel",
+    category: "ride",
     cost: 4800,
     width: 3,
     height: 3,
@@ -68,6 +104,97 @@ export const RIDES: Record<RideType, RideDef> = {
     maxRiders: 16,
     textureKey: "ride_ferris_wheel",
   },
+  food_stand: {
+    name: "Snack Bar",
+    category: "stand",
+    cost: 600,
+    width: 1,
+    height: 1,
+    pricePerRide: 3,
+    rideDurationMs: 2000,
+    maxRiders: 2,
+    textureKey: "stand_food",
+  },
+  cotton_candy: {
+    name: "Cotton Candy",
+    category: "stand",
+    cost: 500,
+    width: 1,
+    height: 1,
+    pricePerRide: 3,
+    rideDurationMs: 2200,
+    maxRiders: 2,
+    textureKey: "stand_cotton_candy",
+  },
+  hot_dog: {
+    name: "Hot Dogs",
+    category: "stand",
+    cost: 700,
+    width: 1,
+    height: 1,
+    pricePerRide: 4,
+    rideDurationMs: 2500,
+    maxRiders: 2,
+    textureKey: "stand_hot_dog",
+    slotPattern: "sw_line",
+  },
+  drinks: {
+    name: "Drinks",
+    category: "stand",
+    cost: 550,
+    width: 1,
+    height: 1,
+    pricePerRide: 2,
+    rideDurationMs: 1800,
+    maxRiders: 2,
+    textureKey: "stand_drinks",
+    slotPattern: "sw_line",
+  },
+  bench: {
+    name: "Bench",
+    category: "decoration",
+    cost: 80,
+    width: 1,
+    height: 1,
+    pricePerRide: 0,
+    rideDurationMs: 0,
+    maxRiders: 0,
+    textureKey: "decor_bench",
+  },
+  lamp: {
+    name: "Lamp",
+    category: "decoration",
+    cost: 120,
+    width: 1,
+    height: 1,
+    pricePerRide: 0,
+    rideDurationMs: 0,
+    maxRiders: 0,
+    textureKey: "decor_lamp",
+  },
+  fountain: {
+    name: "Fountain",
+    category: "decoration",
+    cost: 400,
+    width: 1,
+    height: 1,
+    pricePerRide: 0,
+    rideDurationMs: 0,
+    maxRiders: 0,
+    textureKey: "decor_fountain",
+    scale: 0.5,
+  },
+  planter: {
+    name: "Planter",
+    category: "decoration",
+    cost: 60,
+    width: 1,
+    height: 1,
+    pricePerRide: 0,
+    rideDurationMs: 0,
+    maxRiders: 0,
+    textureKey: "decor_planter",
+  },
 };
 
 export const RIDE_TYPES: RideType[] = Object.keys(RIDES) as RideType[];
@@ -75,9 +202,10 @@ export const RIDE_TYPES: RideType[] = Object.keys(RIDES) as RideType[];
 // Base spawn interval (no rides yet). The actual interval scales down with park
 // score so popular parks fill up faster. See Park.recommendedSpawnIntervalMs().
 export const GUEST_SPAWN_INTERVAL_MS = 2500;
-export const GUEST_STEP_MS = 250;
+export const GUEST_STEP_MS = 380;
 export const GUEST_MAX = 150;
 export const GUEST_VARIANT_COUNT = 10;
+export const GUEST_SCALE = 0.66;
 
 // Park score weighting — used both for the score number itself and for derived
 // values like spawn rate / max concurrent guests.

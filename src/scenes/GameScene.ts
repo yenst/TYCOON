@@ -3,7 +3,9 @@ import { Park } from "../state/Park";
 import { SaveManager } from "../state/SaveManager";
 import { Guest } from "../entities/Guest";
 import { RideSprite } from "../entities/Ride";
+import { renderWorldBackground } from "../entities/Scenery";
 import { gridToScreen, screenToGrid, depth } from "../iso";
+import { adjacentPathTiles } from "../pathfind";
 import {
   MAP_W,
   MAP_H,
@@ -12,6 +14,8 @@ import {
   ENTRANCE_GX,
   ENTRANCE_GY,
   PATH_COST,
+  WATER_COST,
+  BRIDGE_COST,
   RIDES,
   AUTOSAVE_INTERVAL_MS,
   ZOOM_MIN,
@@ -22,24 +26,38 @@ import {
   type RideType,
 } from "../config";
 
-export type BuildMode = "select" | "path" | "ride" | "demolish";
+export type BuildMode = "select" | "path" | "water" | "bridge" | "ride" | "demolish";
+
+function tileTextureKey(t: "grass" | "path" | "water" | "bridge"): string {
+  switch (t) {
+    case "path": return "tile_path";
+    case "water": return "tile_water";
+    case "bridge": return "tile_bridge";
+    default: return "tile_grass";
+  }
+}
 
 export class GameScene extends Phaser.Scene {
   park!: Park;
-  tileSprites: Phaser.GameObjects.Image[][] = [];
+  // Phaser.GameObjects.Sprite is a superset of Image and supports anims (used
+  // for water tiles to play the shimmer cycle). Static tiles work fine too.
+  tileSprites: Phaser.GameObjects.Sprite[][] = [];
   rideSprites: Map<string, RideSprite> = new Map();
   guests: Guest[] = [];
   spawnTimer = 0;
   paused = false;
   mode: BuildMode = "select";
   selectedRideType: RideType = "carousel";
+  buildCategory: "ride" | "stand" | "decoration" = "ride";
   entranceSprite!: Phaser.GameObjects.Image;
+  logoSprite!: Phaser.GameObjects.Image;
   cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   isPainting = false;
   lastPaintedKey: number | null = null;
   saveTimer = 0;
   previewMain!: Phaser.GameObjects.Image;
   previewFootprint: Phaser.GameObjects.Image[] = [];
+  worldBg!: Phaser.GameObjects.Image;
   hoverGx = -1;
   hoverGy = -1;
   activeSaveId: string | null = null;
@@ -78,6 +96,8 @@ export class GameScene extends Phaser.Scene {
     (this as any).game.registry.set("park", park);
     (this as any).game.registry.set("game", this);
 
+    // Backdrop disabled — using a flat camera background color for now.
+    // this.worldBg = renderWorldBackground(this);
     this.renderTiles();
     this.renderEntrance();
     this.renderRides();
@@ -97,17 +117,23 @@ export class GameScene extends Phaser.Scene {
   private renderTiles() {
     this.tileSprites = [];
     for (let y = 0; y < MAP_H; y++) {
-      const row: Phaser.GameObjects.Image[] = [];
+      const row: Phaser.GameObjects.Sprite[] = [];
       for (let x = 0; x < MAP_W; x++) {
         const s = gridToScreen(x, y);
-        const key = this.park.tiles[y]![x] === "path" ? "tile_path" : "tile_grass";
-        const img = this.add.image(s.x, s.y, key);
-        img.setOrigin(0.5, 0.5);
-        img.setDepth(depth(x, y));
-        row.push(img);
+        const t = this.park.tiles[y]![x]!;
+        const sprite = this.add.sprite(s.x, s.y, tileTextureKey(t));
+        sprite.setOrigin(0.5, 0.5);
+        sprite.setDepth(depth(x, y));
+        if (t === "water") this.playWaterAnim(sprite);
+        row.push(sprite);
       }
       this.tileSprites.push(row);
     }
+  }
+
+  /** Start the water shimmer on a tile sprite with a random phase offset. */
+  private playWaterAnim(sprite: Phaser.GameObjects.Sprite) {
+    sprite.play({ key: "water_shimmer", startFrame: Math.floor(Math.random() * 4) });
   }
 
   private renderEntrance() {
@@ -115,6 +141,12 @@ export class GameScene extends Phaser.Scene {
     this.entranceSprite = this.add.image(s.x, s.y, "entrance");
     this.entranceSprite.setOrigin(0.5, 0.85);
     this.entranceSprite.setDepth(depth(ENTRANCE_GX, ENTRANCE_GY) + 0.5);
+
+    // Park logo floats just above the entrance gate as a signpost.
+    this.logoSprite = this.add.image(s.x, s.y - 96, "logo");
+    this.logoSprite.setOrigin(0.5, 1);
+    this.logoSprite.setDisplaySize(96, 96);
+    this.logoSprite.setDepth(depth(ENTRANCE_GX, ENTRANCE_GY) + 0.6);
   }
 
   private renderRides() {
@@ -129,7 +161,9 @@ export class GameScene extends Phaser.Scene {
     for (const row of this.tileSprites) for (const img of row) img.destroy();
     for (const spr of this.rideSprites.values()) spr.destroy();
     for (const g of this.guests) g.destroy();
+    this.worldBg?.destroy();
     this.entranceSprite?.destroy();
+    this.logoSprite?.destroy();
     this.tileSprites = [];
     this.rideSprites.clear();
     this.guests = [];
@@ -138,18 +172,21 @@ export class GameScene extends Phaser.Scene {
     this.lastPaintedKey = null;
     this.isPainting = false;
     this.park = new Park();
+    // Backdrop disabled — using a flat camera background color for now.
+    // this.worldBg = renderWorldBackground(this);
     this.renderTiles();
     this.renderEntrance();
   }
 
   private setupCamera() {
     const cam = this.cameras.main;
-    // Compute world bounds from projected tile corners.
+    // Extend camera bounds past the playable area so the scenery ring is reachable.
+    const PAD = 8; // tiles of scenery padding around the playable map
     const corners = [
-      gridToScreen(0, 0),
-      gridToScreen(MAP_W - 1, 0),
-      gridToScreen(0, MAP_H - 1),
-      gridToScreen(MAP_W - 1, MAP_H - 1),
+      gridToScreen(-PAD, -PAD),
+      gridToScreen(MAP_W - 1 + PAD, -PAD),
+      gridToScreen(-PAD, MAP_H - 1 + PAD),
+      gridToScreen(MAP_W - 1 + PAD, MAP_H - 1 + PAD),
     ];
     const xs = corners.map((c) => c.x);
     const ys = corners.map((c) => c.y);
@@ -163,7 +200,8 @@ export class GameScene extends Phaser.Scene {
     // (most of the buildable area is to the upper-right of it).
     const e = gridToScreen(ENTRANCE_GX + 4, ENTRANCE_GY - 2);
     cam.centerOn(e.x, e.y);
-    cam.setBackgroundColor("#fafafa");
+    // Soft pastel pink wash beyond the playable map.
+    cam.setBackgroundColor("#fdf2f5");
   }
 
   private setupInput() {
@@ -244,18 +282,27 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    if (this.mode === "path") {
+    if (this.mode === "path" || this.mode === "water" || this.mode === "bridge") {
       const s = gridToScreen(gx, gy);
-      const ok =
-        this.park.isGrass(gx, gy) &&
-        this.park.cash >= PATH_COST &&
-        !this.park.isEntrance(gx, gy);
-      this.previewMain.setTexture("tile_path");
+      let texture = "tile_path";
+      let ok = false;
+      if (this.mode === "path") {
+        texture = "tile_path";
+        ok = this.park.isGrass(gx, gy) && this.park.cash >= PATH_COST && !this.park.isEntrance(gx, gy);
+      } else if (this.mode === "water") {
+        texture = "tile_water";
+        ok = this.park.isGrass(gx, gy) && this.park.cash >= WATER_COST && !this.park.isEntrance(gx, gy);
+      } else {
+        texture = "tile_bridge";
+        ok = this.park.isWater(gx, gy) && this.park.cash >= BRIDGE_COST;
+      }
+      this.previewMain.setTexture(texture);
       this.previewMain.setOrigin(0.5, 0.5);
       this.previewMain.setPosition(s.x, s.y);
       this.previewMain.setDepth(depth(gx, gy) + 0.2);
       this.previewMain.setAlpha(0.6);
       this.previewMain.setTint(ok ? 0xffffff : 0xff7799);
+      this.previewMain.setScale(1);
       this.previewMain.setVisible(true);
       for (const f of this.previewFootprint) f.setVisible(false);
       return;
@@ -292,6 +339,10 @@ export class GameScene extends Phaser.Scene {
       this.previewMain.setDepth(depth(gx + def.width - 1, gy + def.height - 1) + 0.6);
       this.previewMain.setAlpha(0.6);
       this.previewMain.setTint(ok ? 0xffffff : 0xff7799);
+      // Match the in-world scale per category (with per-ride override).
+      const defaultScale =
+        def.category === "decoration" ? 0.28 : def.category === "stand" ? 0.5 : 1;
+      this.previewMain.setScale(def.scale ?? defaultScale);
       this.previewMain.setVisible(true);
       return;
     }
@@ -344,6 +395,14 @@ export class GameScene extends Phaser.Scene {
       if (this.park.paintPath(gx, gy, PATH_COST)) {
         this.refreshTile(gx, gy);
       }
+    } else if (this.mode === "water") {
+      if (this.park.paintWater(gx, gy, WATER_COST)) {
+        this.refreshTile(gx, gy);
+      }
+    } else if (this.mode === "bridge") {
+      if (this.park.paintBridge(gx, gy, BRIDGE_COST)) {
+        this.refreshTile(gx, gy);
+      }
     } else if (this.mode === "ride") {
       this.tryPlaceRide(this.selectedRideType, gx, gy);
     } else if (this.mode === "demolish") {
@@ -382,10 +441,15 @@ export class GameScene extends Phaser.Scene {
   }
 
   refreshTile(gx: number, gy: number) {
-    const img = this.tileSprites[gy]?.[gx];
-    if (!img) return;
-    const key = this.park.tiles[gy]![gx] === "path" ? "tile_path" : "tile_grass";
-    img.setTexture(key);
+    const sprite = this.tileSprites[gy]?.[gx];
+    if (!sprite) return;
+    const t = this.park.tiles[gy]![gx]!;
+    if (t === "water") {
+      this.playWaterAnim(sprite);
+    } else {
+      if (sprite.anims.isPlaying) sprite.anims.stop();
+      sprite.setTexture(tileTextureKey(t));
+    }
   }
 
   override update(_time: number, delta: number) {
@@ -428,12 +492,14 @@ export class GameScene extends Phaser.Scene {
     }
     this.guests = survivors;
 
-    // Refresh capacity labels and spin state from authoritative park counts.
+    // Refresh capacity labels, spin state, and stand-slot markers.
     const camZoom = this.cameras.main.zoom;
     for (const [id, sprite] of this.rideSprites) {
       const count = this.park.ridersOn(id);
       sprite.setCapacity(count);
       sprite.matchCameraZoom(camZoom);
+      const slots = this.park.standSlotsFor(id);
+      if (slots.length > 0) sprite.syncSlotMarkers(slots);
       if (count > 0) sprite.startSpin();
       else sprite.stopSpin();
     }

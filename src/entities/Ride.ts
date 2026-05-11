@@ -8,6 +8,14 @@ import rideCarouselUrl from "../../public/assets/rides/carousel.png" with { type
 import rideSwingsUrl from "../../public/assets/rides/swings.png" with { type: "file" };
 import rideBumperCarsUrl from "../../public/assets/rides/bumper_cars.png" with { type: "file" };
 import rideFerrisWheelUrl from "../../public/assets/rides/ferris_wheel.png" with { type: "file" };
+import standFoodUrl from "../../public/assets/stands/food.png" with { type: "file" };
+import standCottonCandyUrl from "../../public/assets/stands/cotton_candy.png" with { type: "file" };
+import standHotDogUrl from "../../public/assets/stands/hot_dog.png" with { type: "file" };
+import standDrinksUrl from "../../public/assets/stands/drinks.png" with { type: "file" };
+import decorBenchUrl from "../../public/assets/decorations/bench.png" with { type: "file" };
+import decorLampUrl from "../../public/assets/decorations/lamp.png" with { type: "file" };
+import decorFountainUrl from "../../public/assets/decorations/fountain.png" with { type: "file" };
+import decorPlanterUrl from "../../public/assets/decorations/planter.png" with { type: "file" };
 // Carousel anim frames
 import carouselAnim00 from "../../public/assets/rides/carousel_anim/00.png" with { type: "file" };
 import carouselAnim01 from "../../public/assets/rides/carousel_anim/01.png" with { type: "file" };
@@ -102,6 +110,14 @@ export const RideAssets = {
     scene.load.image("ride_swings", rideSwingsUrl);
     scene.load.image("ride_bumper_cars", rideBumperCarsUrl);
     scene.load.image("ride_ferris_wheel", rideFerrisWheelUrl);
+    scene.load.image("stand_food", standFoodUrl);
+    scene.load.image("stand_cotton_candy", standCottonCandyUrl);
+    scene.load.image("stand_hot_dog", standHotDogUrl);
+    scene.load.image("stand_drinks", standDrinksUrl);
+    scene.load.image("decor_bench", decorBenchUrl);
+    scene.load.image("decor_lamp", decorLampUrl);
+    scene.load.image("decor_fountain", decorFountainUrl);
+    scene.load.image("decor_planter", decorPlanterUrl);
     for (const [type, frames] of Object.entries(RIDE_ANIM_FRAMES)) {
       for (let i = 0; i < frames.length; i++) {
         scene.load.image(animFrameKey(type, i), frames[i]!);
@@ -130,6 +146,7 @@ export class RideSprite {
   capacityBg: Phaser.GameObjects.Rectangle;
   capacityText: Phaser.GameObjects.Text;
   lastRiders = -1;
+  slotMarkers: Phaser.GameObjects.Polygon[] = [];
 
   constructor(scene: Phaser.Scene, data: RideInstance) {
     this.scene = scene;
@@ -142,6 +159,10 @@ export class RideSprite {
     this.sprite = scene.add.sprite(s.x, s.y, def.textureKey);
     // Origin: bottom-centre so the sprite stands on the tile rather than floats.
     this.sprite.setOrigin(0.5, 0.85);
+    // Per-category default scale, with per-ride override via def.scale.
+    const defaultScale =
+      def.category === "stand" ? 0.5 : def.category === "decoration" ? 0.28 : 1;
+    this.sprite.setScale(def.scale ?? defaultScale);
     // Depth: use the back corner of the footprint so it sorts behind tiles in front.
     const baseDepth = depth(data.gx + def.width - 1, data.gy + def.height - 1) + 0.5;
     this.sprite.setDepth(baseDepth);
@@ -165,6 +186,12 @@ export class RideSprite {
     )
       .setOrigin(0.5, 0.55)
       .setDepth(baseDepth + 0.06);
+
+    // Decorations are pure cosmetics — no capacity readout.
+    if (def.category === "decoration") {
+      this.capacityBg.setVisible(false);
+      this.capacityText.setVisible(false);
+    }
   }
 
   setCapacity(current: number) {
@@ -209,10 +236,20 @@ export class RideSprite {
     this.spinning = false;
   }
 
+  /**
+   * Render small ring markers on each customer slot tile. Stands only — rides
+   * use the abstract counter and don't visualise slots.
+   */
+  syncSlotMarkers(_slots: { gx: number; gy: number; occupant: string | null }[]) {
+    // Markers intentionally not rendered — visual was too noisy.
+  }
+
   destroy() {
     this.sprite.destroy();
     this.capacityBg.destroy();
     this.capacityText.destroy();
+    for (const m of this.slotMarkers) m.destroy();
+    this.slotMarkers = [];
   }
 }
 

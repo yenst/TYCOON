@@ -5,7 +5,7 @@ import { crispText } from "../util/crispText";
 const PANEL_W = 520;
 const ROW_H = 64;
 const PAD = 16;
-const TITLE_H = 80;
+const TITLE_H = 200;
 const NEW_BTN_H = 56;
 
 export class MenuScene extends Phaser.Scene {
@@ -43,20 +43,12 @@ export class MenuScene extends Phaser.Scene {
     const h = this.scale.height;
     const cx = w / 2;
 
-    // Title
-    crispText(
-      this.add.text(cx, 60, "Pastel Park Tycoon", {
-        color: "#111827",
-        fontFamily: "system-ui, sans-serif",
-        fontSize: "32px",
-        fontStyle: "600",
-      }),
-    )
-      .setOrigin(0.5, 0.5)
-      .setDepth(10);
+    // Logo replaces the text title.
+    const logo = this.add.image(cx, 96, "logo").setOrigin(0.5, 0.5).setDepth(10);
+    logo.setDisplaySize(180, 180);
 
     crispText(
-      this.add.text(cx, 96, "Choose a park to play, or start a new one", {
+      this.add.text(cx, 210, "Choose a park to play, or start a new one", {
         color: "#6b7280",
         fontFamily: "system-ui, sans-serif",
         fontSize: "14px",
